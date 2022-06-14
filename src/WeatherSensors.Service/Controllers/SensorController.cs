@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using Microsoft.AspNetCore.Mvc;
 using WeatherSensors.Service.Abstractions;
 using WeatherSensors.Service.Models;
@@ -6,7 +7,7 @@ using WeatherSensors.Service.Models;
 namespace WeatherSensors.Service.Controllers
 {
     [ApiController, Route("api/sensors")]
-    public class SensorController : ControllerBase
+    public sealed class SensorController : ControllerBase
     {
         private readonly ISensorEventCache _sensorEventCache;
 
@@ -19,7 +20,7 @@ namespace WeatherSensors.Service.Controllers
         [HttpGet]
         public ActionResult<SensorEvent[]> GetAllSensorsData()
         {
-            IEnumerable<SensorEvent> sensorEvents = _sensorEventCache.GetEvents();
+            IEnumerable<SensorEvent> sensorEvents = _sensorEventCache.GetEvents().OrderBy(e => e.SensorKey);
             return Ok(sensorEvents);
         }
 

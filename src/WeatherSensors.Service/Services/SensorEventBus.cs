@@ -6,9 +6,9 @@ using WeatherSensors.Service.Models;
 
 namespace WeatherSensors.Service.Services
 {
-    public class SensorEventBus : ISensorEventBus
+    public sealed class SensorEventBus : ISensorEventBus
     {
-        private readonly Subject<SensorEvent> _sensorEventSubject = new();
+        private readonly ISubject<SensorEvent> _sensorEventSubject = Subject.Synchronize(new Subject<SensorEvent>());
 
         public void Publish(SensorEvent sensorEvent)
         {

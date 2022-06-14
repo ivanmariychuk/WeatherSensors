@@ -4,13 +4,13 @@ namespace WeatherSensors.Service.Options
 {
     public sealed class SensorConfig
     {
-        private int _timeoutMilliseconds;
-        private int _intervalMilliseconds;
+        private readonly int _timeoutMilliseconds;
+        private readonly int _intervalMilliseconds;
 
         public int IntervalMilliseconds
         {
             get => _intervalMilliseconds;
-            set
+            init
             {
                 if (value is < 100 or > 2000)
                 {
@@ -24,7 +24,7 @@ namespace WeatherSensors.Service.Options
         public int TimeoutMilliseconds
         {
             get => _timeoutMilliseconds;
-            set
+            init
             {
                 if (value is < 10 or > 100)
                 {

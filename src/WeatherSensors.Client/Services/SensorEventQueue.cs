@@ -6,7 +6,7 @@ using WeatherSensors.Client.Models;
 
 namespace WeatherSensors.Client.Services
 {
-    public class SensorEventQueue : ISensorEventQueue
+    public sealed class SensorEventQueue : ISensorEventQueue
     {
         private readonly ConcurrentQueue<SensorEvent> _sensorEvents = new();
 

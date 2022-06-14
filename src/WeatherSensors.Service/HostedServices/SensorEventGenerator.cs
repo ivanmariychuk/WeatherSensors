@@ -7,41 +7,49 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WeatherSensors.Service.Abstractions;
-using WeatherSensors.Service.Extensions;
 using WeatherSensors.Service.Models;
 using WeatherSensors.Service.Options;
 
 namespace WeatherSensors.Service.HostedServices
 {
-    public sealed class SensorEventGeneratorService : BackgroundService
+    public sealed class SensorEventGenerator : BackgroundService
     {
-        private readonly SensorConfig _sensorConfig;
-        private readonly ILogger<SensorEventGeneratorService> _logger;
+        private readonly ILogger<SensorEventGenerator> _logger;
         private readonly IEnumerable<ISensor> _sensors;
         private readonly ISensorEventCache _sensorEventCache;
         private readonly ISensorEventBus _sensorEventBus;
+        private readonly TimeSpan _interval;
+        private readonly TimeSpan _timeout;
 
-        public SensorEventGeneratorService(
-            ILogger<SensorEventGeneratorService> logger,
-            IOptions<SensorConfig> options,
+        public SensorEventGenerator(
+            ILogger<SensorEventGenerator> logger,
+            IOptions<SensorOptions> options,
             IEnumerable<ISensor> sensors,
             ISensorEventCache sensorEventCache,
             ISensorEventBus sensorEventBus)
         {
-            _sensorConfig = options.Value;
             _logger = logger;
             _sensors = sensors;
             _sensorEventCache = sensorEventCache;
             _sensorEventBus = sensorEventBus;
+            _interval = TimeSpan.FromMilliseconds(options.Value.Config.IntervalMilliseconds);
+            _timeout = TimeSpan.FromMilliseconds(options.Value.Config.TimeoutMilliseconds);
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            while (!stoppingToken.IsCancellationRequested)
+            try
             {
-                await Task.WhenAll(_sensors.Select(s => ProcessSensorDataAsync(s, stoppingToken)));
+                while (!stoppingToken.IsCancellationRequested)
+                {
+                    await Task.WhenAll(_sensors.Select(s => ProcessSensorDataAsync(s, stoppingToken)));
 
-                await Task.Delay(_sensorConfig.IntervalMilliseconds, stoppingToken);
+                    await Task.Delay(_interval, stoppingToken);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("Service stopped working due operation was canceled");
             }
         }
 
@@ -49,20 +57,19 @@ namespace WeatherSensors.Service.HostedServices
         {
             try
             {
-                TimeSpan timeout = TimeSpan.FromMilliseconds(_sensorConfig.TimeoutMilliseconds);
-                SensorData sensorData = await sensor.GetSensorDataAsync(ct).WaitAsync(timeout, ct);
+                SensorData sensorData = await sensor.GetSensorDataAsync(ct).WaitAsync(_timeout, ct);
                 SensorEvent sensorEvent = new SensorEvent
                 {
                     SensorKey = sensor.SensorKey,
                     SensorData = sensorData,
-                    CreatedAt = DateTimeOffset.Now
+                    CreatedAt = DateTimeOffset.UtcNow
                 };
                 _sensorEventCache.AddEvent(sensorEvent);
                 _sensorEventBus.Publish(sensorEvent);
             }
-            catch (OperationCanceledException e)
+            catch (Exception e)
             {
-                _logger.LogError(e, "ProcessSensorDataAsync failed for sensor '{0}'", sensor.SensorKey);
+                _logger.LogError(e, "Get sensor '{0}' data failed", sensor.SensorKey);
             }
         }
     }

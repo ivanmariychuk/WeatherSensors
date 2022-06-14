@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Google.Protobuf.Collections;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using WeatherSensors.Client.Abstractions;
@@ -14,84 +12,84 @@ using WeatherSensors.Service.Protos;
 
 namespace WeatherSensors.Client.Services
 {
-    public class SensorEventService : ISensorEventService
+    public sealed class SensorEventService : ISensorEventService, IDisposable
     {
         private readonly SensorEventGenerator.SensorEventGeneratorClient _sensorEventGeneratorClient;
+        private readonly TaskCompletionSource _sensorEventStreamConnected;
         private readonly HashSet<string> _requestedSensors;
         private AsyncDuplexStreamingCall<SensorEventRequest, SensorEventResponse> _eventStream;
 
         public SensorEventService(SensorEventGenerator.SensorEventGeneratorClient sensorEventGeneratorClient)
         {
             _sensorEventGeneratorClient = sensorEventGeneratorClient;
-            _requestedSensors = new();
-            _eventStream = sensorEventGeneratorClient.SensorEventStream();
+            _sensorEventStreamConnected = new TaskCompletionSource();
+            _requestedSensors = new HashSet<string>();
         }
 
         public async IAsyncEnumerable<SensorEvent> ReadAllAsync([EnumeratorCancellation] CancellationToken ct)
         {
+            await _sensorEventStreamConnected.Task;
+
             await foreach (SensorEventResponse response in _eventStream.ResponseStream.ReadAllAsync(ct))
             {
                 yield return response.ToSensorEvent();
             }
         }
 
-        public async Task SubscribeAsync(IEnumerable<string> sensors)
+        public async Task SubscribeAsync(IReadOnlyCollection<string> sensors)
         {
-            SensorEventRequest request = new() { Command = SensorEventCommand.Subscribe };
-            foreach (string sensor in sensors)
-            {
-                request.Sensors.Add(sensor);
+            EnsureConnected();
 
-                _requestedSensors.Add(sensor);
-            }
+            SensorEventRequest request = new() { Command = SensorEventCommand.Subscribe };
+            request.Sensors.AddRange(sensors);
 
             await _eventStream.RequestStream.WriteAsync(request);
+
+            _requestedSensors.UnionWith(sensors);
         }
 
         public async Task SubscribeAllAsync()
         {
+            EnsureConnected();
+
+            GetSensorsResponse response = await _sensorEventGeneratorClient.GetSensorsAsync(new Empty()).ResponseAsync;
             SensorEventRequest request = new() { Command = SensorEventCommand.SubscribeAll };
-            foreach (string sensor in _sensorEventGeneratorClient.GetSensors(new Empty()).Sensors)
-            {
-                _requestedSensors.Add(sensor);
-            }
+            request.Sensors.AddRange(response.Sensors);
 
             await _eventStream.RequestStream.WriteAsync(request);
+
+            _requestedSensors.UnionWith(response.Sensors);
         }
 
-        public async Task UnsubscribeAsync(IEnumerable<string> sensors)
+        public async Task UnsubscribeAsync(IReadOnlyCollection<string> sensors)
         {
-            SensorEventRequest request = new() { Command = SensorEventCommand.Unsubscribe };
-            foreach (string sensor in sensors)
-            {
-                request.Sensors.Add(sensor);
+            EnsureConnected();
 
-                _requestedSensors.Remove(sensor);
-            }
+            SensorEventRequest request = new() { Command = SensorEventCommand.Unsubscribe };
+            request.Sensors.AddRange(sensors);
 
             await _eventStream.RequestStream.WriteAsync(request);
+
+            _requestedSensors.ExceptWith(sensors);
         }
 
         public async Task UnsubscribeAllAsync()
         {
+            EnsureConnected();
+
             SensorEventRequest request = new() { Command = SensorEventCommand.UnsubscribeAll };
-            _requestedSensors.Clear();
 
             await _eventStream.RequestStream.WriteAsync(request);
+
+            _requestedSensors.Clear();
         }
 
-        public Task CompleteAsync()
-        {
-            return _eventStream.RequestStream.CompleteAsync();
-        }
-
-        public async Task<bool> TryRestartAsync()
+        public async Task<bool> TryReconnectAsync()
         {
             try
             {
-                _eventStream?.Dispose();
                 _eventStream = _sensorEventGeneratorClient.SensorEventStream();
-                
+
                 await SubscribeAsync(_requestedSensors);
 
                 return true;
@@ -99,6 +97,26 @@ namespace WeatherSensors.Client.Services
             catch (Exception)
             {
                 return false;
+            }
+        }
+
+        public async Task CompleteAsync()
+        {
+            await _eventStream.RequestStream.CompleteAsync();
+            Dispose();
+        }
+
+        public void Dispose()
+        {
+            _eventStream?.Dispose();
+        }
+
+        private void EnsureConnected()
+        {
+            _eventStream ??= _sensorEventGeneratorClient.SensorEventStream();
+            if (!_sensorEventStreamConnected.Task.IsCompleted)
+            {
+                _sensorEventStreamConnected.SetResult();
             }
         }
     }

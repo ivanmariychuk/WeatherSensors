@@ -11,24 +11,24 @@ namespace WeatherSensors.Client.Extensions
 {
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddSensors(this IServiceCollection services, IConfiguration configuration)
+        public static IServiceCollection AddSensors(this IServiceCollection services, Action<SensorOptions> configureOptions)
         {
-            services.Configure<SensorConfig>(configuration.GetSection("SensorConfig"));
-
-            services.AddGrpcClient<Service.Protos.SensorEventGenerator.SensorEventGeneratorClient>(
-                (provider, options) =>
-                {
-                    SensorConfig config = provider.GetRequiredService<IOptions<SensorConfig>>().Value;
-                    options.Address = new Uri(config.Address);
-                });
+            services
+                .Configure(configureOptions)
+                .AddGrpcClient<Service.Protos.SensorEventGenerator.SensorEventGeneratorClient>(
+                    (provider, options) =>
+                    {
+                        string address = provider.GetRequiredService<IOptions<SensorOptions>>().Value.Config.Address;
+                        options.Address = new Uri(address);
+                    });
 
             services.AddSingleton<ISensorEventQueue, SensorEventQueue>();
             services.AddSingleton<ISensorEventStorage, SensorEventStorage>();
             services.AddSingleton<ISensorEventService, SensorEventService>();
 
-            services.AddHostedService<SensorEventReceiver>();
-            services.AddHostedService<SensorEventAggregator>();
-            
+            services.Configure(configureOptions).AddHostedService<SensorEventReceiver>();
+            services.Configure(configureOptions).AddHostedService<SensorEventAggregator>();
+
             return services;
         }
     }

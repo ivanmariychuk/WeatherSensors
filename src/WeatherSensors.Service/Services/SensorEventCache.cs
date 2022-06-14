@@ -12,7 +12,7 @@ namespace WeatherSensors.Service.Services
 
         public IEnumerable<SensorEvent> GetEvents()
         {
-            return _sensorEvents.Values.Where(e => e is not null).OrderByDescending(e => e.CreatedAt);
+            return _sensorEvents.Values.Where(e => e is not null);
         }
 
         public SensorEvent GetEvent(string sensorKey)

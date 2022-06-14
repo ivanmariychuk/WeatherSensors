@@ -8,11 +8,11 @@ namespace WeatherSensors.Client.Abstractions
     public interface ISensorEventService
     {
         IAsyncEnumerable<SensorEvent> ReadAllAsync(CancellationToken ct);
-        Task SubscribeAsync(IEnumerable<string> sensors);
+        Task SubscribeAsync(IReadOnlyCollection<string> sensors);
         Task SubscribeAllAsync();
-        Task UnsubscribeAsync(IEnumerable<string> sensors);
+        Task UnsubscribeAsync(IReadOnlyCollection<string> sensors);
         Task UnsubscribeAllAsync();
         Task CompleteAsync();
-        Task<bool> TryRestartAsync();
+        Task<bool> TryReconnectAsync();
     }
 }

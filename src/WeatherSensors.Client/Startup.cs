@@ -1,11 +1,11 @@
 using System;
-using Grpc.Core;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using WeatherSensors.Client.Extensions;
-using WeatherSensors.Service.Protos;
+using WeatherSensors.Client.Middleware;
+using WeatherSensors.Client.Options;
 
 namespace WeatherSensors.Client
 {
@@ -20,7 +20,10 @@ namespace WeatherSensors.Client
 
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddSensors(_configuration);
+            services.AddSensors(options =>
+            {
+                options.Config = _configuration.GetSection("SensorConfig").Get<SensorConfig>();
+            });
 
             services.AddControllers();
         }
@@ -29,7 +32,12 @@ namespace WeatherSensors.Client
         {
             app.UseRouting();
 
-            app.UseEndpoints(endpoints => endpoints.MapControllers());
+            app.UseMiddleware<LoggingMiddleware>();
+
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+            });
         }
     }
 }

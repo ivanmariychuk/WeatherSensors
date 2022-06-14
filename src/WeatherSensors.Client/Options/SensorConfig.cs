@@ -2,17 +2,17 @@
 
 namespace WeatherSensors.Client.Options
 {
-    public class SensorConfig
+    public sealed class SensorConfig
     {
-        private int _aggregationIntervalMinutes;
-        private int _retryIntervalSeconds;
+        private readonly int _aggregationIntervalMinutes;
+        private readonly int _retryIntervalSeconds;
 
         public string Address { get; set; }
 
         public int AggregationIntervalMinutes
         {
             get => _aggregationIntervalMinutes;
-            set
+            init
             {
                 if (value is < 1 or > 60)
                 {
@@ -26,7 +26,7 @@ namespace WeatherSensors.Client.Options
         public int RetryIntervalSeconds
         {
             get => _retryIntervalSeconds;
-            set
+            init
             {
                 if (value is < 1 or > 60)
                 {

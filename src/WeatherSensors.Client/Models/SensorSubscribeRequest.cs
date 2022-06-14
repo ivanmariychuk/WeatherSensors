@@ -1,8 +1,13 @@
-﻿namespace WeatherSensors.Client.Models
+﻿using System.Text.Json.Serialization;
+
+namespace WeatherSensors.Client.Models
 {
-    public class SensorSubscribeRequest
+    public sealed class SensorSubscribeRequest
     {
-        public bool All { get; set; }
-        public string[] Sensors { get; set; }
+        [JsonPropertyName("all_sensors")]
+        public bool AllSensors { get; init; }
+
+        [JsonPropertyName("sensors")]
+        public string[] Sensors { get; init; }
     }
 }

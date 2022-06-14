@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using WeatherSensors.Client.Abstractions;
@@ -8,7 +9,7 @@ using WeatherSensors.Client.Models;
 namespace WeatherSensors.Client.Controllers
 {
     [ApiController, Route("api/sensors")]
-    public class SensorController : ControllerBase
+    public sealed class SensorController : ControllerBase
     {
         private readonly ISensorEventService _sensorEventService;
         private readonly ISensorEventStorage _sensorEventStorage;
@@ -25,12 +26,12 @@ namespace WeatherSensors.Client.Controllers
         [HttpGet("aggregate")]
         public ActionResult GetSensorEvents(DateTimeOffset start, DateTimeOffset end)
         {
-            IEnumerable<AggregatedSensorEvent> sensorEvents = _sensorEventStorage.GetEvents(start, end);
+            IEnumerable<AggregatedSensorEvent> sensorEvents = _sensorEventStorage.GetEvents(start, end).OrderBy(e => e.SensorKey);
 
             return Ok(sensorEvents);
         }
         
-        // GET api/sensors/aggregate/sensor_key?start=2022-06-10T00:00&end=2022-06-10T00:10
+        // GET api/sensors/aggregate/sensor_key?start=2022-06-10T15:00&end=2022-06-10T15:10
         [HttpGet("aggregate/{sensorKey}")]
         public ActionResult GetSensorEvent(string sensorKey, DateTimeOffset start, DateTimeOffset end)
         {
@@ -56,7 +57,7 @@ namespace WeatherSensors.Client.Controllers
         [HttpPost("subscribe")]
         public async Task<IActionResult> SubscribeMultiple(SensorSubscribeRequest request)
         {
-            if (request.All)
+            if (request.AllSensors)
             {
                 await _sensorEventService.SubscribeAllAsync();
 
@@ -86,7 +87,7 @@ namespace WeatherSensors.Client.Controllers
         [HttpPost("unsubscribe")]
         public async Task<IActionResult> UnsubscribeMultiple(SensorUnsubscribeRequest request)
         {
-            if (request.All)
+            if (request.AllSensors)
             {
                 await _sensorEventService.UnsubscribeAllAsync();
                 

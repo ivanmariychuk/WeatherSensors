@@ -12,10 +12,8 @@ namespace WeatherSensors.Service.Extensions
 {
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddSensors(this IServiceCollection services, IConfiguration configuration)
+        public static IServiceCollection AddSensors(this IServiceCollection services, Action<SensorOptions> configureOptions)
         {
-            services.Configure<SensorConfig>(configuration.GetSection("SensorConfig"));
-
             Type[] sensorTypes = Assembly.GetAssembly(typeof(ISensor))
                 ?.GetTypes()
                 .Where(t => t.IsAssignableTo(typeof(ISensor)) && t.IsClass && !t.IsAbstract)
@@ -28,7 +26,7 @@ namespace WeatherSensors.Service.Extensions
             services.AddSingleton<ISensorEventCache, SensorEventCache>();
             services.AddSingleton<ISensorEventBus, SensorEventBus>();
 
-            services.AddHostedService<SensorEventGeneratorService>();
+            services.Configure(configureOptions).AddHostedService<SensorEventGenerator>();
 
             return services;
         }

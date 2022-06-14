@@ -2,7 +2,6 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Grpc.Core;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -12,7 +11,7 @@ using WeatherSensors.Client.Options;
 
 namespace WeatherSensors.Client.HostedServices
 {
-    public class SensorEventReceiver : BackgroundService
+    public sealed class SensorEventReceiver : BackgroundService
     {
         private readonly ILogger<SensorEventReceiver> _logger;
         private readonly ISensorEventQueue _sensorEventQueue;
@@ -21,14 +20,14 @@ namespace WeatherSensors.Client.HostedServices
 
         public SensorEventReceiver(
             ILogger<SensorEventReceiver> logger,
-            IOptions<SensorConfig> options,
+            IOptions<SensorOptions> options,
             ISensorEventQueue sensorEventQueue,
             ISensorEventService sensorEventService)
         {
             _logger = logger;
             _sensorEventQueue = sensorEventQueue;
             _sensorEventService = sensorEventService;
-            _sensorConfig = options.Value;
+            _sensorConfig = options.Value.Config;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -45,26 +44,36 @@ namespace WeatherSensors.Client.HostedServices
 
                             _sensorEventQueue.EnqueueEvent(sensorEvent);
                         }
+                        
+                        await ReconnectAsync(stoppingToken);
                     }
-                    catch (RpcException e)
+                    catch (RpcException e) when (e.StatusCode == StatusCode.Unavailable)
                     {
-                        _logger.LogError(e, null);
+                        _logger.LogWarning("GPRC Service is unavailable, trying to reconnect");
 
-                        if (!await _sensorEventService.TryRestartAsync())
-                        {
-                            await Task.Delay(_sensorConfig.RetryIntervalSeconds, stoppingToken);
-                        }
-
+                        await ReconnectAsync(stoppingToken);
+                    }
+                    catch (RpcException e) when (e.StatusCode == StatusCode.Cancelled)
+                    {
+                        _logger.LogWarning("GPRC Service operation was cancelled by client");
+                        
+                        await _sensorEventService.CompleteAsync();
                     }
                 }
             }
             catch (OperationCanceledException)
             {
-                _logger.LogWarning("SensorEventReceiver stopped working due operation was canceled");
+                _logger.LogWarning("Service stopped working due operation was canceled");
+
+                await _sensorEventService.CompleteAsync();
             }
-            catch (Exception e)
+        }
+
+        private async Task ReconnectAsync(CancellationToken ct)
+        {
+            while (!await _sensorEventService.TryReconnectAsync())
             {
-                _logger.LogError("SensorEventReceiver stopped working", e);
+                await Task.Delay(_sensorConfig.RetryIntervalSeconds, ct);
             }
         }
     }

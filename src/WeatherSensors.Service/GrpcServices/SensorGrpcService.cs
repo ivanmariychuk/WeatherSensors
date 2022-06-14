@@ -4,9 +4,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
+using System.Threading;
 using System.Threading.Tasks;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using WeatherSensors.Service.Protos;
 using WeatherSensors.Service.Abstractions;
@@ -14,20 +16,23 @@ using WeatherSensors.Service.Extensions;
 
 namespace WeatherSensors.Service.GrpcServices
 {
-    public class SensorGrpcService : SensorEventGenerator.SensorEventGeneratorBase
+    public sealed class SensorGrpcService : SensorEventGenerator.SensorEventGeneratorBase
     {
         private readonly ILogger<SensorGrpcService> _logger;
         private readonly ISensorEventBus _sensorEventBus;
+        private readonly IHostApplicationLifetime _lifetime;
         private readonly string[] _allSensors;
         private readonly ConcurrentDictionary<string, bool> _requestedSensors;
 
         public SensorGrpcService(
             ILogger<SensorGrpcService> logger,
             ISensorEventBus sensorEventBus,
-            IEnumerable<ISensor> sensors)
+            IEnumerable<ISensor> sensors,
+            IHostApplicationLifetime lifetime)
         {
             _logger = logger;
             _sensorEventBus = sensorEventBus;
+            _lifetime = lifetime;
             _allSensors = sensors.Select(s => s.SensorKey).ToArray();
             _requestedSensors = new();
         }
@@ -44,33 +49,53 @@ namespace WeatherSensors.Service.GrpcServices
             IServerStreamWriter<SensorEventResponse> responseStream,
             ServerCallContext context)
         {
-            IDisposable sensorEventSub = _sensorEventBus.AsObservable()
-                .Where(e => _requestedSensors.GetOrAdd(e.SensorKey, false))
-                .SelectMany(e => responseStream.WriteAsync(e.ToSensorEventResponse()).ToObservable())
-                .Subscribe();
+            CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(
+                _lifetime.ApplicationStopping,
+                context.CancellationToken);
 
-            await foreach (SensorEventRequest request in requestStream.ReadAllAsync())
+            IDisposable sensorEventSub = null;
+            try
             {
-                _logger.LogInformation($"SensorGrpcService received command '{request.Command.ToString()}'");
+                sensorEventSub = _sensorEventBus
+                    .AsObservable()
+                    .Where(e => _requestedSensors.GetOrAdd(e.SensorKey, false))
+                    .SelectMany(e =>
+                        responseStream
+                            .WriteAsync(e.ToSensorEventResponse(), cts.Token)
+                            .ToObservable())
+                    .Subscribe();
 
-                switch (request.Command)
+                await foreach (SensorEventRequest request in requestStream.ReadAllAsync(cts.Token))
                 {
-                    case SensorEventCommand.Subscribe:
-                        Subscribe(request.Sensors);
-                        break;
-                    case SensorEventCommand.SubscribeAll:
-                        Subscribe(_allSensors);
-                        break;
-                    case SensorEventCommand.Unsubscribe:
-                        Unsubscribe(request.Sensors);
-                        break;
-                    case SensorEventCommand.UnsubscribeAll:
-                        Unsubscribe(_allSensors);
-                        break;
+                    _logger.LogInformation("Command {0} received", request.Command);
+
+                    switch (request.Command)
+                    {
+                        case SensorEventCommand.Subscribe:
+                            Subscribe(request.Sensors);
+                            break;
+                        case SensorEventCommand.SubscribeAll:
+                            Subscribe(_allSensors);
+                            break;
+                        case SensorEventCommand.Unsubscribe:
+                            Unsubscribe(request.Sensors);
+                            break;
+                        case SensorEventCommand.UnsubscribeAll:
+                            Unsubscribe(_allSensors);
+                            break;
+                        default:
+                            continue;
+                    }
                 }
             }
-            
-            sensorEventSub?.Dispose();
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("Service stopped working due operation was canceled");
+            }
+            finally
+            {
+                sensorEventSub?.Dispose();
+            }
         }
 
         private void Subscribe(IEnumerable<string> sensors)

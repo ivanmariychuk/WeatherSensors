@@ -4,6 +4,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using WeatherSensors.Service.Extensions;
 using WeatherSensors.Service.GrpcServices;
+using WeatherSensors.Service.Middleware;
+using WeatherSensors.Service.Options;
 
 namespace WeatherSensors.Service
 {
@@ -18,7 +20,10 @@ namespace WeatherSensors.Service
 
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddSensors(_configuration);
+            services.AddSensors(options =>
+            {
+                options.Config = _configuration.GetSection("SensorConfig").Get<SensorConfig>();
+            });
 
             services.AddGrpc();
 
@@ -28,6 +33,8 @@ namespace WeatherSensors.Service
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
             app.UseRouting();
+
+            app.UseMiddleware<LoggingMiddleware>();
 
             app.UseEndpoints(endpoints =>
             {

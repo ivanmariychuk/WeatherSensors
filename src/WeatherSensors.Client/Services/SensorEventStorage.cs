@@ -7,7 +7,7 @@ using WeatherSensors.Client.Models;
 
 namespace WeatherSensors.Client.Services
 {
-    public class SensorEventStorage : ISensorEventStorage
+    public sealed class SensorEventStorage : ISensorEventStorage
     {
         private readonly ConcurrentDictionary<string, List<AggregatedSensorEvent>> _sensorEvents = new();
 
@@ -26,7 +26,7 @@ namespace WeatherSensors.Client.Services
         public AggregatedSensorEvent GetEvent(string sensorKey, DateTimeOffset start, DateTimeOffset end)
         {
             AggregatedSensorEvent[] sensorEvents = _sensorEvents[sensorKey]
-                .Where(e => e.StartedAt >= start && e.EndedAt <= end)
+                .Where(e => e.StartedAt >= start && e.EndedAt < end)
                 .OrderBy(e => e.StartedAt)
                 .ThenBy(e => e.EndedAt)
                 .ToArray();
